@@ -25,8 +25,8 @@ export class Game {
     public input: InputSystem;
     public effects: EffectSystem;
 
-    public money: number = CONFIG.PLAYER.START_MONEY;
-    public lives: number = CONFIG.PLAYER.START_LIVES;
+    public money: number;
+    public lives: number;
     public wave: number = 0;
     
     public isWaveActive: boolean = false;
@@ -43,6 +43,9 @@ export class Game {
         this.canvas.width = window.innerWidth;
         this.canvas.height = window.innerHeight;
 
+        this.money = CONFIG.PLAYER.START_MONEY;
+        this.lives = CONFIG.PLAYER.START_LIVES;
+
         this.events = new EventEmitter();
         this.projectilePool = new ObjectPool<Projectile>(() => new Projectile());
         
@@ -50,9 +53,10 @@ export class Game {
         this.effects = new EffectSystem(this.ctx);
         this.cardSys = new CardSystem(this);
         this.input = new InputSystem(this);
-        this.ui = new UIManager(this); // UIManager теперь инициализирует ShopSystem
+        this.ui = new UIManager(this);
         
         this.ui.update();
+        this.ui.hideGameOver();
         this.loop = this.loop.bind(this);
     }
 
@@ -60,34 +64,37 @@ export class Game {
         if (this.isRunning) return;
         this.isRunning = true;
         this.loop();
-        console.log("Game Loop Started");
     }
 
     public restart() {
         this.isRunning = false;
         
-        // Сброс ресурсов
         this.money = CONFIG.PLAYER.START_MONEY;
         this.lives = CONFIG.PLAYER.START_LIVES;
         this.wave = 0;
         this.isWaveActive = false;
         
-        // Очистка
         this.enemies = [];
         this.towers = [];
         this.projectiles = []; 
         if (this.spawnInterval) clearInterval(this.spawnInterval);
         
-        // Сброс карт
         this.cardSys.hand = [];
         this.cardSys.forgeSlots = [null, null];
         this.cardSys.addCard('FIRE', 1);
         this.cardSys.addCard('ICE', 1);
         this.cardSys.addCard('SNIPER', 1);
-        this.cardSys.render(); // Обновление руки
+        this.cardSys.render();
         
         this.ui.update();
         this.start(); 
+    }
+    
+    public sellCard() {
+        const sellPrice = CONFIG.ECONOMY.SELL_PRICE || 25;
+        this.money += sellPrice;
+        this.showFloatingText(`+${sellPrice}💰 (Продано)`, this.canvas.width - 100, this.canvas.height - 150, 'yellow');
+        this.ui.update();
     }
 
     public startWave() {
@@ -169,14 +176,19 @@ export class Game {
     }
 
     public handleGridClick(col: number, row: number) { 
-        // ...
+        // Здесь можно добавить логику выделения башни
     }
 
-    public handleCardDrop(card: ICard): boolean {
-        const col = this.input.hoverCol;
-        const row = this.input.hoverRow;
+    // --- ИСПРАВЛЕНИЕ: ПРИНИМАЕМ ЯВНЫЕ КООРДИНАТЫ ---
+    public handleCardDrop(card: ICard, explicitCol?: number, explicitRow?: number): boolean {
+        // Если координаты передали (из CardSystem), используем их. Иначе берем из InputSystem.
+        const col = explicitCol !== undefined ? explicitCol : this.input.hoverCol;
+        const row = explicitRow !== undefined ? explicitRow : this.input.hoverRow;
 
+        // 1. Проверка границ
         if (col < 0 || col >= this.map.cols || row < 0 || row >= this.map.rows) return false;
+        
+        // 2. Проверка типа местности (0 = BUILDABLE)
         if (this.map.grid[row][col].type !== 0) { 
             this.showFloatingText("Здесь нельзя строить!", col, row, 'red');
             return false;
@@ -203,6 +215,7 @@ export class Game {
             const newTower = new Tower(col, row);
             newTower.addCard(card);
             this.towers.push(newTower);
+            
             this.effects.add({type: 'explosion', x: newTower.x, y: newTower.y, radius: 40, life: 20, color: '#ffffff'});
             this.showFloatingText(`-${cost}💰`, col, row, 'gold');
             this.ui.update();
@@ -210,9 +223,12 @@ export class Game {
         }
     }
 
+    // PUBLIC для доступа из ShopSystem
     public showFloatingText(text: string, col: number, row: number, color: string) {
-        const x = (col * CONFIG.TILE_SIZE) || col;
-        const y = (row * CONFIG.TILE_SIZE) || row;
+        // Если передали координаты пикселей (большие числа), используем их как есть
+        // Если передали координаты сетки (маленькие числа), умножаем на TILE_SIZE
+        const x = (col > 100) ? col : (col * CONFIG.TILE_SIZE);
+        const y = (row > 100) ? row : (row * CONFIG.TILE_SIZE);
         
         this.effects.add({
             type: 'text', text: text, x: x + 32, y: y, life: 60, color: color, vy: -1
@@ -274,7 +290,7 @@ export class Game {
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         this.map.draw(this.ctx);
 
-        // --- ПРИЗРАЧНЫЙ РАДИУС (GHOST) ---
+        // --- GHOST: Рендер призрачного радиуса ---
         const dragCard = this.cardSys.dragCard;
         if (dragCard && this.input.hoverCol >= 0) {
             const hx = this.input.hoverCol * CONFIG.TILE_SIZE;
@@ -294,11 +310,11 @@ export class Game {
                     const futureCards = [...existing.cards, dragCard];
                     const stats = Tower.getPreviewStats(futureCards);
                     range = stats.range;
-                    color = 'rgba(100, 255, 100, 0.3)'; // Upgrade
+                    color = 'rgba(100, 255, 100, 0.3)';
                 } else {
                     const stats = Tower.getPreviewStats([dragCard]);
                     range = stats.range;
-                    color = 'rgba(100, 200, 255, 0.3)'; // New
+                    color = 'rgba(100, 200, 255, 0.3)';
                 }
 
                 this.ctx.fillStyle = color;
@@ -314,6 +330,7 @@ export class Game {
             }
         }
 
+        // Подсветка клетки
         if (this.input.hoverCol >= 0) {
             const hx = this.input.hoverCol * CONFIG.TILE_SIZE;
             const hy = this.input.hoverRow * CONFIG.TILE_SIZE;
@@ -324,7 +341,6 @@ export class Game {
 
         this.towers.forEach(t => t.draw(this.ctx));
 
-        // --- ВРАГИ С HP БАРАМИ ---
         this.enemies.forEach(e => {
             this.ctx.fillStyle = e.getColor();
             this.ctx.beginPath(); this.ctx.arc(e.x, e.y, 16, 0, Math.PI*2); this.ctx.fill();

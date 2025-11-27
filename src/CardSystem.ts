@@ -36,6 +36,22 @@ export class CardSystem {
         this.addCard('SNIPER', 1);
     }
 
+    public addCard(typeKey: string, level: number): boolean {
+        // Лимит 10 карт
+        if (this.hand.length >= CONFIG.PLAYER.HAND_LIMIT) {
+            this.game.sellCard(); 
+            return false;
+        }
+
+        const type = (CONFIG.CARD_TYPES as any)[typeKey];
+        if (!type) return false;
+
+        const card: ICard = { id: generateUUID(), type, level, isDragging: false };
+        this.hand.push(card);
+        this.render();
+        return true;
+    }
+
     public startDrag(card: ICard, e: MouseEvent) {
         if (this.isForging) return;
         
@@ -59,25 +75,42 @@ export class CardSystem {
         this.ghostEl.style.top = (y - 50) + 'px';
     }
 
+    // --- ИСПРАВЛЕННЫЙ МЕТОД ---
     public endDrag(e: MouseEvent) {
         if (!this.dragCard) return;
 
         this.ghostEl.style.display = 'none';
         
-        // Проверка зоны Кузницы
+        // 1. Проверка зоны Кузницы
         const forgeRect = document.getElementById('forge-panel')!.getBoundingClientRect();
-        if (
+        const isInForge = 
             e.clientX >= forgeRect.left && e.clientX <= forgeRect.right &&
-            e.clientY >= forgeRect.top && e.clientY <= forgeRect.bottom
-        ) {
+            e.clientY >= forgeRect.top && e.clientY <= forgeRect.bottom;
+
+        if (isInForge) {
             const idx = e.clientX < (forgeRect.left + forgeRect.width/2) ? 0 : 1;
             this.putInForge(idx, this.dragCard);
         } 
-        // Проверка Игрового Поля
+        // 2. Проверка зоны Игрового Поля (Canvas)
         else {
-            const canvasRect = this.game.canvas.getBoundingClientRect();
-            if (e.clientY < canvasRect.bottom) {
-                const success = this.game.handleCardDrop(this.dragCard);
+            const rect = this.game.canvas.getBoundingClientRect();
+            
+            // Строгая проверка: курсор должен быть ВНУТРИ квадрата канваса
+            const isInCanvas = 
+                e.clientX >= rect.left && e.clientX <= rect.right &&
+                e.clientY >= rect.top && e.clientY <= rect.bottom;
+
+            if (isInCanvas) {
+                // САМИ считаем координаты сетки
+                const relativeX = e.clientX - rect.left;
+                const relativeY = e.clientY - rect.top;
+                
+                const col = Math.floor(relativeX / CONFIG.TILE_SIZE);
+                const row = Math.floor(relativeY / CONFIG.TILE_SIZE);
+
+                // Передаем координаты в Game
+                const success = this.game.handleCardDrop(this.dragCard, col, row);
+                
                 if (success) {
                     this.hand = this.hand.filter(c => c.id !== this.dragCard!.id);
                 }
@@ -87,17 +120,6 @@ export class CardSystem {
         this.dragCard.isDragging = false;
         this.dragCard = null;
         this.render();
-    }
-
-    public addCard(typeKey: string, level: number): boolean {
-        if (this.hand.length >= CONFIG.PLAYER.HAND_LIMIT) return false;
-        const type = (CONFIG.CARD_TYPES as any)[typeKey];
-        if (!type) return false;
-
-        const card: ICard = { id: generateUUID(), type, level, isDragging: false };
-        this.hand.push(card);
-        this.render();
-        return true;
     }
 
     public putInForge(slotIdx: number, card: ICard) {
@@ -115,7 +137,6 @@ export class CardSystem {
         return !!(c1 && c2 && c1.type.id === c2.type.id && c1.level === c2.level && c1.level < 3);
     }
 
-    // ИСПРАВЛЕНИЕ ЗДЕСЬ: используем CONFIG.ECONOMY.FORGE_COST
     public tryForge() {
         const cost = CONFIG.ECONOMY.FORGE_COST;
 

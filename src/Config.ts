@@ -9,18 +9,19 @@ export const CONFIG = {
     
     // Игрок
     PLAYER: {
-        START_MONEY: 150, // Чуть больше денег на старт
+        START_MONEY: 150, 
         START_LIVES: 20, 
-        HAND_LIMIT: 7
+        HAND_LIMIT: 10 // <<<--- ИЗМЕНЕНО: 10
     },
     
-    // Экономика и Лут (Важно!)
+    // Экономика и Лут
     ECONOMY: {
-        WAVE_CLEAR_REWARD: 2, // Сколько карт даем за прохождение волны
-        DROP_CHANCE: 0.15,    // 15% шанс выпадения карты с врага
-        EARLY_WAVE_BONUS: 30, // Золото за вызов волны досрочно
+        WAVE_CLEAR_REWARD: 2,
+        DROP_CHANCE: 0.15,
+        EARLY_WAVE_BONUS: 30,
         TOWER_COST: 55,
-        FORGE_COST: 50
+        FORGE_COST: 50,
+        SELL_PRICE: 25 // <<<--- НОВОЕ: Цена продажи карты при переполнении
     },
     
     // --- БАЛАНС КАРТ И БАШЕН ---

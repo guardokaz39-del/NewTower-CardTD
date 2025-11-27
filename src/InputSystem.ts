@@ -12,9 +12,7 @@ export class InputSystem {
     public hoverCol: number = -1;
     public hoverRow: number = -1;
 
-    // Состояние нажатия
     public isMouseDown: boolean = false;
-    public isDragging: boolean = false;
 
     constructor(game: Game) {
         this.game = game;
@@ -23,9 +21,9 @@ export class InputSystem {
     }
 
     private initListeners() {
-        // Движение мыши
         this.canvas.addEventListener('mousemove', (e) => {
             const rect = this.canvas.getBoundingClientRect();
+            // Считаем X/Y строго внутри канваса
             this.mouseX = e.clientX - rect.left;
             this.mouseY = e.clientY - rect.top;
 
@@ -33,29 +31,35 @@ export class InputSystem {
             this.hoverCol = Math.floor(this.mouseX / 64);
             this.hoverRow = Math.floor(this.mouseY / 64);
 
-            // Если мы что-то тащим (карту), обновляем "призрака"
+            // Если мы что-то тащим (карту), обновляем "призрака" по координатам ЭКРАНА
             if (this.game.cardSys.dragCard) {
                 this.game.cardSys.updateDrag(e.clientX, e.clientY);
             }
         });
 
-        // Нажатие
         this.canvas.addEventListener('mousedown', (e) => {
-            if (e.button === 0) { // ЛКМ
+            if (e.button === 0) {
                 this.isMouseDown = true;
-                // Сообщаем игре о клике для начала строительства
                 this.game.handleGridClick(this.hoverCol, this.hoverRow);
             }
         });
 
-        // Отпускание (глобально, на случай если ушли за пределы канваса)
-        window.addEventListener('mouseup', (e) => {
-            this.isMouseDown = false;
-            
-            // Если тащили карту - отпускаем
+        window.addEventListener('mouseup', () => {
+            if (this.isMouseDown) {
+                this.isMouseDown = false;
+            }
+            // Также вызываем endDrag глобально, если отпустили кнопку
+            if (this.game.cardSys.dragCard) {
+                // передаем событие мыши (хотя бы примерное), 
+                // но лучше полагаться на mouseup event Listener внутри CardSystem
+            }
+        });
+        
+        // Отдельно вешаем на window, чтобы ловить отпускание карты где угодно
+        window.onmouseup = (e) => {
             if (this.game.cardSys.dragCard) {
                 this.game.cardSys.endDrag(e);
             }
-        });
+        };
     }
 }
