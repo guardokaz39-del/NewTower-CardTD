@@ -2,15 +2,15 @@ export interface IEffect {
     type: 'explosion' | 'text' | 'particle' | 'scan';
     x: number;
     y: number;
-    life: number;     // Сколько кадров живет
-    maxLife?: number; // Для анимации прозрачности
+    life: number;     
+    maxLife?: number;
     
-    // Опциональные параметры
     radius?: number;
     color?: string;
     text?: string;
     vx?: number;
     vy?: number;
+    size?: number; // Размер частицы
 }
 
 export class EffectSystem {
@@ -21,58 +21,80 @@ export class EffectSystem {
         this.ctx = ctx;
     }
 
-    // Добавить эффект (взрыв, текст и т.д.)
     public add(effect: IEffect) {
-        // Устанавливаем maxLife для анимации, если не задано
         if (!effect.maxLife) effect.maxLife = effect.life;
         this.effects.push(effect);
     }
 
+    // Создать взрыв из частиц (Juice helper)
+    public spawnParticles(x: number, y: number, color: string, count: number = 10) {
+        for(let i=0; i<count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 3 + 1;
+            this.add({
+                type: 'particle',
+                x: x, y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 30 + Math.random() * 20,
+                color: color,
+                size: Math.random() * 4 + 2
+            });
+        }
+    }
+
     public update() {
-        // Обновляем состояние каждого эффекта
-        this.effects.forEach(e => {
+        for (let i = this.effects.length - 1; i >= 0; i--) {
+            const e = this.effects[i];
             e.life--;
+
+            if (e.life <= 0) {
+                this.effects.splice(i, 1);
+                continue;
+            }
 
             if (e.type === 'particle' || e.type === 'text') {
                 if (e.vx) e.x += e.vx;
                 if (e.vy) e.y += e.vy;
+                
+                // Гравитация для частиц
+                if (e.type === 'particle') e.vy! += 0.1;
             }
-        });
-
-        // Удаляем мертвые эффекты
-        this.effects = this.effects.filter(e => e.life > 0);
+        }
     }
 
     public draw() {
         this.effects.forEach(e => {
-            const progress = e.life / (e.maxLife || 1); // От 1 до 0
-
+            const progress = e.life / (e.maxLife || 1);
             this.ctx.save();
-            
+            this.ctx.globalAlpha = progress;
+
             if (e.type === 'explosion') {
-                // Взрыв: круг, который становится прозрачным
                 this.ctx.fillStyle = e.color || 'orange';
-                this.ctx.globalAlpha = progress;
                 this.ctx.beginPath();
                 this.ctx.arc(e.x, e.y, e.radius || 30, 0, Math.PI * 2);
                 this.ctx.fill();
             }
             else if (e.type === 'text') {
-                // Всплывающий текст (урон, золото)
                 this.ctx.fillStyle = e.color || '#fff';
-                this.ctx.font = "bold 16px Arial";
-                this.ctx.globalAlpha = progress;
-                this.ctx.fillText(e.text || '', e.x, e.y);
-                // Обводка для читаемости
+                this.ctx.font = "900 20px 'Segoe UI', sans-serif";
                 this.ctx.strokeStyle = 'black';
-                this.ctx.lineWidth = 2;
+                this.ctx.lineWidth = 3;
                 this.ctx.strokeText(e.text || '', e.x, e.y);
+                this.ctx.fillText(e.text || '', e.x, e.y);
             }
             else if (e.type === 'particle') {
-                // Мелкие частицы
                 this.ctx.fillStyle = e.color || '#fff';
-                this.ctx.globalAlpha = progress;
-                this.ctx.fillRect(e.x, e.y, 4, 4);
+                this.ctx.fillRect(e.x, e.y, e.size || 3, e.size || 3);
+            }
+            else if (e.type === 'scan') {
+                // Кольцо расширяется
+                const radius = (1 - progress) * (e.radius || 50);
+                this.ctx.strokeStyle = e.color || 'white';
+                this.ctx.lineWidth = 2 * progress;
+                this.ctx.beginPath();
+                this.ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+                this.ctx.stroke();
             }
 
             this.ctx.restore();

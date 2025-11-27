@@ -14,8 +14,8 @@ export class InputSystem {
     // Логика удержания
     public isMouseDown: boolean = false;
     private holdStartTime: number = 0;
-    public holdProgress: number = 0; // 0.0 -> 1.0
-    private hasBuilt: boolean = false; // Чтобы не строить 100 башен за одно нажатие
+    public holdProgress: number = 0; // от 0.0 до 1.0
+    private hasBuilt: boolean = false; // Флаг, чтобы не строить 2 башни за 1 клик
 
     constructor(game: Game) {
         this.game = game;
@@ -26,28 +26,13 @@ export class InputSystem {
     private initListeners() {
         // 1. Движение
         this.canvas.addEventListener('mousemove', (e) => {
-            const rect = this.canvas.getBoundingClientRect();
-            this.mouseX = e.clientX - rect.left;
-            this.mouseY = e.clientY - rect.top;
+            this.updateMousePos(e);
 
-            const newCol = Math.floor(this.mouseX / CONFIG.TILE_SIZE);
-            const newRow = Math.floor(this.mouseY / CONFIG.TILE_SIZE);
-
-            // Если сдвинули мышь на другую клетку — сбрасываем прогресс строительства
-            if (newCol !== this.hoverCol || newRow !== this.hoverRow) {
-                this.resetHold();
-            }
-
-            this.hoverCol = newCol;
-            this.hoverRow = newRow;
-
-            // Обновляем позицию перетаскиваемой карты
-            if (this.game.cardSys.dragCard) {
-                this.game.cardSys.updateDrag(e.clientX, e.clientY);
-            }
+            // Если сдвинули мышь на другую клетку — сбрасываем прогресс
+            // (Нужно пересчитать hoverCol перед сравнением, это делается в updateMousePos)
         });
 
-        // 2. Нажатие (Начало стройки)
+        // 2. Нажатие
         this.canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0) { // ЛКМ
                 this.isMouseDown = true;
@@ -56,15 +41,39 @@ export class InputSystem {
             }
         });
 
-        // 3. Отпускание (Конец стройки или сброс карты)
+        // 3. Отпускание
         window.addEventListener('mouseup', (e) => {
             this.isMouseDown = false;
             this.resetHold();
-
+            
+            // Если тащили карту
             if (this.game.cardSys.dragCard) {
                 this.game.cardSys.endDrag(e);
             }
         });
+    }
+
+    // Централизованный метод расчета координат (screenToTile)
+    private updateMousePos(e: MouseEvent) {
+        const rect = this.canvas.getBoundingClientRect();
+        this.mouseX = e.clientX - rect.left;
+        this.mouseY = e.clientY - rect.top;
+
+        const newCol = Math.floor(this.mouseX / CONFIG.TILE_SIZE);
+        const newRow = Math.floor(this.mouseY / CONFIG.TILE_SIZE);
+
+        // Если перешли на новую клетку, сбрасываем таймер стройки
+        if (newCol !== this.hoverCol || newRow !== this.hoverRow) {
+            this.resetHold();
+        }
+
+        this.hoverCol = newCol;
+        this.hoverRow = newRow;
+
+        // Обновляем визуальный drag карты
+        if (this.game.cardSys.dragCard) {
+            this.game.cardSys.updateDrag(e.clientX, e.clientY);
+        }
     }
 
     private resetHold() {
@@ -73,17 +82,18 @@ export class InputSystem {
         this.holdStartTime = Date.now();
     }
 
-    // Вызывается каждый кадр из Game.update()
+    // Вызывается в Game loop
     public update() {
-        // Если тащим карту — не строим башни
+        // Если тащим карту - строить нельзя
         if (this.game.cardSys.dragCard) {
             this.resetHold();
             return;
         }
 
         if (this.isMouseDown && !this.hasBuilt) {
-            // Проверяем валидность клетки через Game
+            // Проверяем валидность места через Game
             if (this.game.canBuildAt(this.hoverCol, this.hoverRow)) {
+                
                 const elapsed = Date.now() - this.holdStartTime;
                 this.holdProgress = Math.min(1, elapsed / CONFIG.CONTROLS.BUILD_HOLD_MS);
 
@@ -94,7 +104,6 @@ export class InputSystem {
                     this.holdProgress = 0;
                 }
             } else {
-                // Если клетка занята или нельзя строить — сброс
                 this.resetHold();
             }
         } else {

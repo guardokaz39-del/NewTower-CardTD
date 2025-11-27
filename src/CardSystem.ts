@@ -30,16 +30,22 @@ export class CardSystem {
         ];
         this.ghostEl = document.getElementById('drag-ghost')!;
 
-        // Стартовые карты
+        // Стартовый набор
         this.addCard('FIRE', 1);
-        this.addCard('ICE', 1);
         this.addCard('SNIPER', 1);
+        this.addCard('MULTISHOT', 1);
     }
 
     public addCard(typeKey: string, level: number): boolean {
-        // Лимит 10 карт
         if (this.hand.length >= CONFIG.PLAYER.HAND_LIMIT) {
-            this.game.sellCard(); 
+            // Авто-продажа, если рука полна
+            const sellPrice = CONFIG.ECONOMY.SELL_PRICE;
+            this.game.money += sellPrice;
+            this.game.effects.add({
+                type: 'text', text: `+${sellPrice}💰 (Sold)`, 
+                x: this.game.canvas.width/2, y: this.game.canvas.height - 100,
+                life: 60, color: 'gold', vy: -1
+            });
             return false;
         }
 
@@ -71,50 +77,51 @@ export class CardSystem {
 
     public updateDrag(x: number, y: number) {
         if (!this.dragCard) return;
-        this.ghostEl.style.left = (x - 35) + 'px';
-        this.ghostEl.style.top = (y - 50) + 'px';
+        // Центрируем призрак относительно курсора
+        this.ghostEl.style.left = (x - 32) + 'px';
+        this.ghostEl.style.top = (y - 45) + 'px';
     }
 
-    // --- ИСПРАВЛЕННЫЙ МЕТОД ---
     public endDrag(e: MouseEvent) {
         if (!this.dragCard) return;
 
         this.ghostEl.style.display = 'none';
-        
-        // 1. Проверка зоны Кузницы
-        const forgeRect = document.getElementById('forge-panel')!.getBoundingClientRect();
+        let actionSuccess = false;
+
+        // 1. Проверка зоны Кузницы (через DOM)
+        const forgeRect = document.getElementById('forge-container')!.getBoundingClientRect();
         const isInForge = 
             e.clientX >= forgeRect.left && e.clientX <= forgeRect.right &&
             e.clientY >= forgeRect.top && e.clientY <= forgeRect.bottom;
 
         if (isInForge) {
+            // Определяем слот (левый или правый)
             const idx = e.clientX < (forgeRect.left + forgeRect.width/2) ? 0 : 1;
             this.putInForge(idx, this.dragCard);
+            actionSuccess = true;
         } 
-        // 2. Проверка зоны Игрового Поля (Canvas)
+        // 2. Проверка Игрового Поля (Raycast / Математика)
         else {
             const rect = this.game.canvas.getBoundingClientRect();
             
-            // Строгая проверка: курсор должен быть ВНУТРИ квадрата канваса
-            const isInCanvas = 
-                e.clientX >= rect.left && e.clientX <= rect.right &&
-                e.clientY >= rect.top && e.clientY <= rect.bottom;
-
-            if (isInCanvas) {
-                // САМИ считаем координаты сетки
-                const relativeX = e.clientX - rect.left;
-                const relativeY = e.clientY - rect.top;
+            if (e.clientX >= rect.left && e.clientX <= rect.right &&
+                e.clientY >= rect.top && e.clientY <= rect.bottom) {
                 
-                const col = Math.floor(relativeX / CONFIG.TILE_SIZE);
-                const row = Math.floor(relativeY / CONFIG.TILE_SIZE);
-
-                // Передаем координаты в Game
-                const success = this.game.handleCardDrop(this.dragCard, col, row);
+                // Переводим экранные координаты в игровые (клетки)
+                const gameX = e.clientX - rect.left;
+                const gameY = e.clientY - rect.top;
                 
-                if (success) {
-                    this.hand = this.hand.filter(c => c.id !== this.dragCard!.id);
-                }
+                const col = Math.floor(gameX / CONFIG.TILE_SIZE);
+                const row = Math.floor(gameY / CONFIG.TILE_SIZE);
+
+                // Пытаемся применить карту
+                actionSuccess = this.game.handleCardDrop(this.dragCard, col, row);
             }
+        }
+
+        if (actionSuccess) {
+            // Удаляем карту из руки
+            this.hand = this.hand.filter(c => c.id !== this.dragCard!.id);
         }
 
         this.dragCard.isDragging = false;
@@ -134,34 +141,36 @@ export class CardSystem {
 
     public canForge(): boolean {
         const [c1, c2] = this.forgeSlots;
-        return !!(c1 && c2 && c1.type.id === c2.type.id && c1.level === c2.level && c1.level < 3);
+        return !!(c1 && c2 && c1.type.id === c2.type.id && c1.level === c2.level);
     }
 
     public tryForge() {
         const cost = CONFIG.ECONOMY.FORGE_COST;
-
         if (!this.canForge() || this.game.money < cost) return;
         
         this.game.money -= cost;
-        this.game.ui.update();
         this.isForging = true;
+        this.game.ui.update();
         
-        const f0 = this.forgeContainers[0].firstElementChild;
-        const f1 = this.forgeContainers[1].firstElementChild;
-        if(f0) f0.classList.add('shaking');
-        if(f1) f1.classList.add('shaking');
+        // Визуал тряски
+        const c1El = this.forgeContainers[0].firstElementChild;
+        const c2El = this.forgeContainers[1].firstElementChild;
+        if(c1El) c1El.animate([{transform: 'translateX(-2px)'}, {transform: 'translateX(2px)'}], {duration: 100, iterations: 5});
+        if(c2El) c2El.animate([{transform: 'translateX(-2px)'}, {transform: 'translateX(2px)'}], {duration: 100, iterations: 5});
 
         setTimeout(() => {
             const c1 = this.forgeSlots[0]!;
             const newLevel = c1.level + 1;
+            
+            // Находим ключ типа карты по ID
             let typeKey = 'FIRE';
             for (const key in CONFIG.CARD_TYPES) {
                 if ((CONFIG.CARD_TYPES as any)[key].id === c1.type.id) typeKey = key;
             }
 
             this.game.effects.add({
-                type: 'explosion', x: window.innerWidth - 100, y: window.innerHeight - 100,
-                life: 30, radius: 50, color: '#fff'
+                type: 'text', text: 'SUCCESS!', x: this.game.canvas.width/2, y: this.game.canvas.height - 150,
+                life: 60, color: '#00ff00', vy: -2
             });
 
             this.forgeSlots = [null, null];

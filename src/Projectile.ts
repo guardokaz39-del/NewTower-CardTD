@@ -1,5 +1,7 @@
 import { Enemy } from './Enemy';
-import { EffectSystem } from './EffectSystem'; // Нужен для взрывов
+import { EffectSystem } from './EffectSystem';
+import { Tower } from './Tower';
+import { CONFIG } from './Config';
 
 export interface IProjectileStats {
     dmg: number;
@@ -7,6 +9,7 @@ export interface IProjectileStats {
     color: string;
     effects: any[];
     pierce: number;
+    critChance?: number; // Шанс крита
 }
 
 export class Projectile {
@@ -14,7 +17,7 @@ export class Projectile {
     public y: number = 0;
     public vx: number = 0;
     public vy: number = 0;
-    public radius: number = 4;
+    public rotation: number = 0;
     public alive: boolean = false;
     
     public damage: number = 0;
@@ -22,37 +25,41 @@ export class Projectile {
     public color: string = '#fff';
     public effects: any[] = [];
     public pierce: number = 0;
+    public critChance: number = 0;
     public hitList: Enemy[] = [];
+    public source: Tower | null = null;
 
     constructor() {
         this.reset();
     }
 
-    init(x: number, y: number, target: {x: number, y: number}, stats: IProjectileStats) {
+    init(x: number, y: number, angle: number, stats: IProjectileStats, source: Tower) {
         this.x = x; 
         this.y = y; 
+        this.rotation = angle;
+        
+        this.vx = Math.cos(angle) * stats.speed;
+        this.vy = Math.sin(angle) * stats.speed;
+        
         this.alive = true;
+        this.life = 60; // 1 секунда жизни
+        
         this.damage = stats.dmg; 
         this.color = stats.color; 
-        this.effects = stats.effects; // <-- Тут лежат эффекты (splash, slow)
+        this.effects = stats.effects;
         this.pierce = stats.pierce || 0; 
+        this.critChance = stats.critChance || 0;
+        
         this.hitList = [];
-        
-        const angle = Math.atan2(target.y - y, target.x - x);
-        const speed = stats.speed;
-        this.vx = Math.cos(angle) * speed; 
-        this.vy = Math.sin(angle) * speed;
-        
-        this.life = 100;
+        this.source = source;
     }
 
     reset() {
-        this.x = 0; this.y = 0;
-        this.hitList = [];
         this.alive = false;
+        this.hitList = [];
+        this.source = null;
     }
 
-    // Теперь update принимает еще и EffectSystem, чтобы создавать взрывы
     update(enemies: Enemy[], effectsSys: EffectSystem) {
         if (!this.alive) return;
 
@@ -60,21 +67,23 @@ export class Projectile {
         this.y += this.vy; 
         this.life--;
         
-        if(this.life <= 0) {
+        if(this.life <= 0 || this.x < 0 || this.x > window.innerWidth || this.y < 0 || this.y > window.innerHeight) {
             this.alive = false;
             return;
         }
 
+        // Коллизии
         for(let e of enemies) {
             if (!e.isAlive()) continue;
             if(this.hitList.indexOf(e) !== -1) continue;
             
-            if (Math.hypot(e.x - this.x, e.y - this.y) < (16 + this.radius)) {
-                // Передаем весь список врагов в hit, чтобы сделать Splash
-                this.hit(e, enemies, effectsSys);
+            // Проверка попадания (дистанция < 20)
+            if (Math.hypot(e.x - this.x, e.y - this.y) < 20) {
+                this.hit(e, effectsSys, enemies); // Передаем список всех врагов для AOE
                 
                 if(this.pierce > 0) { 
                     this.pierce--; 
+                    this.damage = Math.floor(this.damage * 0.85); // Штраф за пробитие
                     this.hitList.push(e); 
                 } else { 
                     this.alive = false; 
@@ -84,49 +93,84 @@ export class Projectile {
         }
     }
 
-    // Логика попадания
-    hit(target: Enemy, allEnemies: Enemy[], effectsSys: EffectSystem) {
-        // 1. Прямой урон
-        target.takeDamage(this.damage);
-
-        // 2. Проверяем Сплэш (Взрыв)
-        const splash = this.effects.find(e => e.type === 'splash');
-        if (splash) {
-            // Рисуем взрыв
-            effectsSys.add({
-                type: 'explosion', x: target.x, y: target.y, 
-                radius: splash.radius, life: 15, color: 'rgba(255, 100, 0, 0.5)'
-            });
-
-            // Наносим урон соседям
-            for (let neighbor of allEnemies) {
-                if (neighbor === target || !neighbor.isAlive()) continue;
-                const dist = Math.hypot(neighbor.x - target.x, neighbor.y - target.y);
-                if (dist <= splash.radius) {
-                    neighbor.takeDamage(this.damage * 0.7); // 70% урона по площади
-                }
-            }
+    hit(target: Enemy, effectsSys: EffectSystem, allEnemies: Enemy[]) {
+        // 1. Расчет КРИТА
+        let finalDamage = this.damage;
+        let isCrit = false;
+        
+        if (Math.random() < this.critChance) {
+            isCrit = true;
+            finalDamage *= 2.0; 
         }
 
-        // 3. Проверяем Замедление (Лед)
+        // 2. Нанесение урона
+        target.takeDamage(finalDamage);
+        
+        // Статистика башни
+        if (this.source) {
+            this.source.damageDealt += finalDamage;
+        }
+
+        // 3. Визуальный текст урона
+        effectsSys.add({ 
+            type: 'text', 
+            text: Math.floor(finalDamage).toString(), 
+            x: target.x, y: target.y - 20, 
+            life: 40, 
+            color: isCrit ? CONFIG.COLORS.CRIT : '#fff',
+            vy: -1
+        });
+        
+        // Тряска при крите
+        if (isCrit) {
+             document.body.style.transform = `translate(${Math.random()*4-2}px, ${Math.random()*4-2}px)`;
+             setTimeout(() => document.body.style.transform = 'none', 50);
+        }
+
+        // 4. Эффекты (Splash, Slow, Death triggers)
+        
+        // Splash (Огонь)
+        const splash = this.effects.find(e => e.type === 'splash');
+        if (splash) {
+            effectsSys.add({ type: 'explosion', x: target.x, y: target.y, radius: splash.radius, life: 15, color: this.color });
+            allEnemies.forEach(neighbor => {
+                if (neighbor !== target && neighbor.isAlive() && Math.hypot(neighbor.x - target.x, neighbor.y - target.y) < splash.radius!) {
+                    neighbor.takeDamage(finalDamage * 0.7); 
+                }
+            });
+        }
+
+        // Slow (Лед)
         const slow = this.effects.find(e => e.type === 'slow');
         if (slow) {
-            // Применяем статус (тип, длительность, сила)
-            // slow.dur берется из конфига Tower.ts
-            target.applyStatus('slow', slow.dur || 60, 0.4); // 40% замедление
-            
-            // Эффект частиц льда
-            effectsSys.add({
-                type: 'particle', x: target.x, y: target.y, life: 20, color: '#00bcd4'
-            });
+            target.applyStatus('slow', slow.dur, slow.power, slow.amp); 
+        }
+
+        // Kill Effects (сохраняем во врага, сработают при смерти)
+        const killExplode = this.effects.find(e => e.type === 'killExplode');
+        if (killExplode) {
+            target.deathEffects.push({ type: 'explode', dmg: this.source ? this.source.getStats().dmg * killExplode.power : 10 });
+        }
+        
+        const killFreeze = this.effects.find(e => e.type === 'killFreeze');
+        if (killFreeze) {
+            target.deathEffects.push({ type: 'freeze' });
         }
     }
     
     draw(ctx: CanvasRenderingContext2D) {
-        if (!this.alive) return;
-        ctx.fillStyle = this.color; 
-        ctx.beginPath(); 
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); 
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.rotation);
+        ctx.fillStyle = this.color;
+        // Рисуем трассер
+        ctx.beginPath();
+        ctx.moveTo(6, 0); 
+        ctx.lineTo(-6, -3); 
+        ctx.lineTo(-4, 0);  
+        ctx.lineTo(-6, 3); 
+        ctx.closePath();
         ctx.fill();
+        ctx.restore();
     }
 }

@@ -7,123 +7,129 @@
         body { margin: 0; overflow: hidden; background: #222; font-family: 'Segoe UI', sans-serif; user-select: none; }
         
         #game-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
-        canvas { box-shadow: 0 0 30px rgba(0,0,0,0.5); border-radius: 4px; }
+        canvas { box-shadow: 0 0 50px rgba(0,0,0,0.5); border-radius: 4px; background: #333; }
         
         /* UI Слой */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
         
+        /* Инфо-панель сверху */
         .top-bar { 
             position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-            background: rgba(0,0,0,0.8); padding: 10px 30px; border-radius: 20px;
-            display: flex; gap: 30px; color: white; font-size: 20px; font-weight: bold;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3); pointer-events: auto;
+            background: rgba(0,0,0,0.85); padding: 10px 40px; border-radius: 30px;
+            display: flex; gap: 40px; color: white; font-size: 22px; font-weight: bold;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4); pointer-events: auto; border: 1px solid #444;
         }
 
         /* Кнопка Старта */
         #start-wave-btn {
             position: absolute; top: 20px; left: 20px; 
-            width: 60px; height: 60px; border-radius: 50%; 
-            background: #d32f2f; border: 4px solid #b71c1c; color: white; font-size: 28px;
+            width: 70px; height: 70px; border-radius: 50%; 
+            background: #d32f2f; border: 4px solid #b71c1c; color: white; font-size: 32px;
             cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.4);
-            pointer-events: auto; transition: transform 0.1s;
+            pointer-events: auto; transition: transform 0.1s, filter 0.2s;
             display: flex; align-items: center; justify-content: center;
             z-index: 10;
         }
+        #start-wave-btn:hover { filter: brightness(1.2); transform: scale(1.05); }
         #start-wave-btn:active { transform: scale(0.95); }
+        #start-wave-btn:disabled { background: #555; border-color: #333; cursor: not-allowed; opacity: 0.7; }
 
-        /* Панели */
-        #forge-container { position: absolute; bottom: 20px; left: 20px; pointer-events: auto; }
-        #shop-container { position: absolute; bottom: 20px; right: 20px; pointer-events: auto; }
-        
-        #hand-container {
-            position: absolute; bottom: 20px; left: 50%; 
-            transform: translateX(-50%);
-            width: 50vw; 
+        /* Панели (Кузница и Магазин) */
+        .ui-panel {
+            padding: 15px; border-radius: 15px; background: rgba(30, 30, 35, 0.95);
+            border: 2px solid #555; width: 260px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.6);
             pointer-events: auto;
-            display: flex; justify-content: center;
+        }
+        #forge-container { position: absolute; bottom: 20px; left: 20px; }
+        #shop-container { position: absolute; bottom: 20px; right: 20px; }
+
+        .panel-title { 
+            color: #ccc; font-weight: 700; margin-bottom: 15px; 
+            border-bottom: 1px solid #555; padding-bottom: 8px; 
+            font-size: 14px; text-align: center; letter-spacing: 1px; text-transform: uppercase;
+        }
+        
+        .slots-container { display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; }
+        
+        /* Слоты */
+        .slot {
+            width: 60px; height: 85px; border: 2px dashed #666; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center; color: #555; font-size: 20px;
+            background: rgba(0,0,0,0.3); position: relative; transition: 0.2s;
+        }
+        .slot.shop-slot { border-color: #ffd700; color: #ffd700; opacity: 0.5; } 
+
+        /* Кнопки действий */
+        button.action-btn {
+            width: 100%; padding: 12px; border: none; border-radius: 8px; 
+            font-weight: bold; cursor: pointer; color: white; background: #555; 
+            font-size: 16px; transition: 0.2s; text-transform: uppercase;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        #forge-btn { background: #e65100; }
+        #shop-btn { background: #1976d2; }
+        
+        button:disabled { background: #333 !important; color: #777; cursor: not-allowed; }
+        button:hover:not(:disabled) { filter: brightness(1.2); transform: translateY(-2px); }
+
+        /* РУКА ИГРОКА */
+        #hand-container {
+            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+            width: 40vw; pointer-events: auto; display: flex; justify-content: center;
         }
         #hand {
-            display: flex; gap: 10px; padding: 15px; background: rgba(0,0,0,0.6);
-            border-radius: 15px; justify-content: center; 
-            min-width: 300px; min-height: 110px;
+            display: flex; gap: 8px; padding: 10px 20px; 
+            background: rgba(0,0,0,0.5); border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+            min-width: 200px; min-height: 100px; align-items: flex-end;
         }
 
-        .ui-panel {
-            padding: 15px; border-radius: 15px; background: rgba(40, 40, 50, 0.9);
-            border: 2px solid #444; width: 260px; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-        }
-        .panel-title { 
-            color: #ddd; font-weight: bold; margin-bottom: 15px; border-bottom: 1px solid #555; 
-            padding-bottom: 5px; font-size: 16px; text-align: center; letter-spacing: 1px;
-        }
-        
-        .slots-container { 
-            display: flex; gap: 10px; margin-bottom: 10px; justify-content: center; 
-        }
-        .slot {
-            width: 70px; height: 100px; border: 2px dashed #666; border-radius: 8px;
-            display: flex; align-items: center; justify-content: center; color: #555; font-size: 24px;
-            background: rgba(0,0,0,0.2); position: relative;
-        }
-        .slot.shop-slot { border-color: gold; color: gold; } 
-
-        button {
-            padding: 12px 20px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
-            color: white; background: #555; font-size: 16px; transition: 0.2s; text-transform: uppercase;
-        }
-        #forge-btn { background: #e65100; width: 100%; }
-        #shop-btn { background: #1976d2; width: 100%; }
-        button:disabled { background: #444; color: #888; cursor: not-allowed; }
-        button:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
-
-        /* Карты */
+        /* КАРТЫ */
         .card {
-            width: 70px; height: 100px; background: #fff; border-radius: 8px;
+            width: 64px; height: 90px; background: #eee; border-radius: 6px;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
-            position: relative; box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            cursor: grab; border: 2px solid rgba(0,0,0,0.1);
-            user-select: none;
+            position: relative; box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            cursor: grab; border: 2px solid rgba(0,0,0,0.1); user-select: none;
+            transition: transform 0.1s;
         }
-        .card:hover { transform: translateY(-5px); z-index: 10; }
+        .card:hover { transform: translateY(-10px); z-index: 100; border-color: #fff; }
+        .card:active { cursor: grabbing; }
         
         .card.type-fire { background: linear-gradient(135deg, #ffcdd2, #e57373); border-color: #b71c1c; }
         .card.type-ice { background: linear-gradient(135deg, #b3e5fc, #4fc3f7); border-color: #0288d1; }
         .card.type-sniper { background: linear-gradient(135deg, #c8e6c9, #81c784); border-color: #388e3c; }
-        
-        .card-level { position: absolute; top: 5px; right: 5px; font-weight: bold; color: #333; font-size: 14px; }
-        .card-icon { font-size: 32px; }
-        
-        .card.shop-preview { transform: scale(0.9); cursor: default; }
+        .card.type-multi { background: linear-gradient(135deg, #ffe0b2, #ffb74d); border-color: #e65100; }
 
-        /* --- НОВЫЙ СТИЛЬ: ВЫДЕЛЕННАЯ КАРТА В МАГАЗИНЕ --- */
-        .card.selected {
-            border: 3px solid #ffd700 !important; /* Золотая рамка */
-            transform: scale(1.05) translateY(-10px); /* Приподнять */
-            box-shadow: 0 0 15px #ffd700; /* Свечение */
-            z-index: 20;
+        .card-level { 
+            position: absolute; top: 2px; right: 4px; 
+            font-weight: 900; color: rgba(0,0,0,0.7); font-size: 14px; 
         }
+        .card-icon { font-size: 28px; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.2)); }
 
+        /* ПРИЗРАК ПЕРЕТАСКИВАНИЯ (КРИТИЧНОЕ ИСПРАВЛЕНИЕ) */
         #drag-ghost {
-            position: fixed; pointer-events: none; z-index: 9999; display: none;
-            opacity: 0.8; transform: scale(1.1); box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            position: fixed; pointer-events: none; /* <<< ВОТ ОНО! ЭТО ЧИНИТ БАГ */
+            z-index: 9999; display: none; opacity: 0.9; 
+            transform: scale(1.1) rotate(5deg); 
+            box-shadow: 0 15px 30px rgba(0,0,0,0.4);
         }
-        .shaking { animation: shake 0.5s; }
-        @keyframes shake { 0% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } 100% { transform: translateX(0); } }
 
-        /* Экран Game Over */
+        .dragging-placeholder { opacity: 0.3; filter: grayscale(1); transform: scale(0.9); }
+
+        /* Game Over */
         #game-over {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
-            flex-direction: column; justify-content: center; align-items: center;
-            color: white; z-index: 100; pointer-events: auto;
+            background: rgba(0,0,0,0.9); flex-direction: column; 
+            justify-content: center; align-items: center; color: white; 
+            z-index: 200; pointer-events: auto;
         }
-        #game-over h1 { font-size: 60px; margin: 0 0 20px 0; color: #e53935; text-shadow: 0 0 20px red; }
+        #game-over h1 { font-size: 60px; margin: 0 0 20px 0; color: #ff3333; letter-spacing: 5px; }
         #restart-btn {
-            padding: 15px 40px; font-size: 24px; background: #2ecc71; color: white;
-            border: none; border-radius: 50px; cursor: pointer; box-shadow: 0 0 20px rgba(46, 204, 113, 0.6);
+            padding: 15px 50px; font-size: 24px; background: #4caf50; color: white;
+            border: none; border-radius: 50px; cursor: pointer; 
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.5); font-weight: bold;
         }
-        #restart-btn:hover { transform: scale(1.05); background: #27ae60; }
+        #restart-btn:hover { transform: scale(1.1); background: #66bb6a; }
     </style>
 </head>
 <body>
@@ -137,15 +143,15 @@
                 <div>🌊 <span id="wave">1</span></div>
             </div>
 
-            <button id="start-wave-btn" title="Начать следующую волну">⚔️</button>
+            <button id="start-wave-btn" title="Начать волну">⚔️</button>
             
             <div id="forge-container" class="ui-panel">
-                <div class="panel-title">⚒️ КУЗНИЦА</div>
+                <div class="panel-title">⚒️ Кузница</div>
                 <div class="slots-container">
-                    <div class="slot" id="forge-slot-0">1</div>
-                    <div class="slot" id="forge-slot-1">2</div>
+                    <div class="slot" id="forge-slot-0"></div>
+                    <div class="slot" id="forge-slot-1"></div>
                 </div>
-                <button id="forge-btn" disabled><span>⚒️</span> 50💰</button>
+                <button id="forge-btn" class="action-btn" disabled><span>⚒️</span> 50💰</button>
             </div>
 
             <div id="hand-container">
@@ -153,17 +159,16 @@
             </div>
 
             <div id="shop-container" class="ui-panel">
-                <div class="panel-title">🛒 МАГАЗИН</div>
-                <div class="slots-container" id="shop-slots">
-                    </div>
-                <button id="shop-btn" disabled><span>🛒</span> 100💰</button>
+                <div class="panel-title">🛒 Магазин</div>
+                <div class="slots-container" id="shop-slots"></div>
+                <button id="shop-btn" class="action-btn" disabled><span>🛒</span> 100💰</button>
             </div>
 
             <div id="game-over">
-                <h1>GAME OVER</h1>
-                <p>Wave reached: <span id="final-wave">0</span></p>
+                <h1>ПОРАЖЕНИЕ</h1>
+                <p>Вы дожили до волны <span id="final-wave">0</span></p>
                 <br>
-                <button id="restart-btn">Try Again</button>
+                <button id="restart-btn">ИГРАТЬ СНОВА</button>
             </div>
         </div>
         

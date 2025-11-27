@@ -4,25 +4,27 @@ export interface IEnemyConfig {
     id: string;
     health: number;
     speed: number;
+    path: { x: number, y: number }[];
+    type: any;
     armor?: number;
     x?: number; 
     y?: number;
-    path: { x: number, y: number }[];
 }
 
-// Интерфейс для эффекта (например, замедление)
 interface IStatus {
     type: 'slow';
-    duration: number; // сколько кадров осталось
-    power: number;    // сила эффекта (0.5 = 50% скорости)
+    duration: number;
+    power: number;
+    amp?: number; // Увеличение входящего урона
 }
 
 export class Enemy {
     public id: string;
     public currentHealth: number;
     public maxHealth: number;
-    public baseSpeed: number; // Исходная скорость
+    public baseSpeed: number;
     public armor: number;
+    public type: any;
     
     public x: number;
     public y: number;
@@ -34,8 +36,13 @@ export class Enemy {
     private offsetX: number = 0;
     private offsetY: number = 0;
 
-    // Список активных эффектов
     public statuses: IStatus[] = [];
+    public deathEffects: any[] = []; // Эффекты при смерти (взрыв и т.д.)
+
+    // Глобальное замедление от Обелиска
+    public static globalSlow: number = 0; 
+    
+    private abilityTimer: number = 0;
 
     constructor(config: IEnemyConfig) {
         this.id = config.id;
@@ -43,57 +50,78 @@ export class Enemy {
         this.currentHealth = config.health;
         this.baseSpeed = config.speed;
         this.armor = config.armor || 0;
-        this.path = config.path;
+        this.type = config.type;
 
+        this.path = config.path;
+        
         if (config.x !== undefined && config.y !== undefined) {
             this.x = config.x;
             this.y = config.y;
-        } else {
+        } else if (this.path.length > 0) {
             this.x = this.path[0].x * CONFIG.TILE_SIZE + 32;
             this.y = this.path[0].y * CONFIG.TILE_SIZE + 32;
+        } else {
+            this.x = 0; this.y = 0;
         }
 
-        const startNode = this.path[0];
-        this.offsetX = this.x - (startNode.x * CONFIG.TILE_SIZE + 32);
-        this.offsetY = this.y - (startNode.y * CONFIG.TILE_SIZE + 32);
-        this.pathIndex = 1; 
+        this.offsetX = (Math.random() - 0.5) * 20;
+        this.offsetY = (Math.random() - 0.5) * 20;
+        this.x += this.offsetX;
+        this.y += this.offsetY;
+    }
+
+    public applyStatus(type: 'slow', duration: number, power: number, amp: number = 0) {
+        const existing = this.statuses.find(s => s.type === type);
+        if (existing) {
+            existing.duration = duration;
+            existing.amp = Math.max(existing.amp || 0, amp);
+        } else {
+            this.statuses.push({ type, duration, power, amp });
+        }
     }
 
     public takeDamage(amount: number): void {
-        const actualDamage = Math.max(1, amount - this.armor);
-        this.currentHealth -= actualDamage;
+        let finalDmg = Math.max(1, amount - this.armor);
+        
+        // Если есть статус с AMP (от Ice Tower Lvl 2+), увеличиваем урон
+        const slow = this.statuses.find(s => s.type === 'slow');
+        if (slow && slow.amp) {
+            finalDmg *= (1 + slow.amp);
+        }
+
+        this.currentHealth -= finalDmg;
         if (this.currentHealth < 0) this.currentHealth = 0;
     }
 
-    // Добавить эффект (например, от ледяной башни)
-    public applyStatus(type: 'slow', duration: number, power: number) {
-        // Ищем, есть ли уже такой эффект
-        const existing = this.statuses.find(s => s.type === type);
-        if (existing) {
-            // Обновляем таймер, но не даем замедлять сильнее, чем уже есть
-            existing.duration = Math.max(existing.duration, duration);
-            existing.power = Math.max(existing.power, power);
-        } else {
-            this.statuses.push({ type, duration, power });
-        }
-    }
-
-    public move(): void {
-        if (this.finished) return;
-
-        // 1. Обновляем статусы
+    public move(game: any): void {
+        // 1. Статусы
         this.statuses.forEach(s => s.duration--);
         this.statuses = this.statuses.filter(s => s.duration > 0);
 
-        // 2. Считаем реальную скорость (База * (1 - сила замедления))
-        // Если замедление 0.4, то скорость будет 0.6 от нормы
+        // 2. Расчет скорости
         let speedMod = 1;
         const slow = this.statuses.find(s => s.type === 'slow');
         if (slow) speedMod -= slow.power;
+
+        // Влияние обелиска
+        if (Enemy.globalSlow > 0) speedMod -= Enemy.globalSlow;
+
+        // Способности Скаута (Рывок)
+        if (this.type.id === 'scout' && this.currentHealth < this.maxHealth * 0.5) {
+            speedMod *= 2.0;
+            if (Math.random() < 0.1) {
+                game.effects.add({ type: 'particle', x: this.x, y: this.y, life: 10, color: 'yellow', size: 2 });
+            }
+        }
         
         const currentSpeed = Math.max(0, this.baseSpeed * speedMod);
 
-        // 3. Стандартная логика движения (но с currentSpeed)
+        // 3. Логика Босса (Спавн)
+        if (this.type.id === 'boss') {
+            this.handleBossLogic(game);
+        }
+
+        // 4. Движение
         if (this.pathIndex >= this.path.length) {
             this.finished = true;
             return;
@@ -118,17 +146,33 @@ export class Enemy {
         }
     }
 
-    public isAlive(): boolean {
-        return this.currentHealth > 0;
+    private handleBossLogic(game: any) {
+        const hpPercent = this.currentHealth / this.maxHealth;
+        this.abilityTimer++;
+        
+        if (hpPercent > 0.5) {
+            if (this.abilityTimer > 120) { // Фаза 1
+                this.summonMinions(game, 2);
+                this.abilityTimer = 0;
+            }
+        } else {
+             if (this.abilityTimer > 300) { // Фаза 2
+                this.summonMinions(game, 1);
+                this.abilityTimer = 0;
+            }
+        }
     }
 
-    public getHealthPercent(): number {
-        return this.currentHealth / this.maxHealth;
+    private summonMinions(game: any, count: number) {
+        for(let i=0; i<count; i++) {
+             const spawnType = (this.currentHealth > this.maxHealth * 0.5) ? 'GRUNT' : 'SCOUT';
+             game.spawnEnemy(spawnType, {
+                 x: this.x + (Math.random()-0.5)*40,
+                 y: this.y + (Math.random()-0.5)*40
+             });
+        }
     }
 
-    // Хелпер для отрисовки (синий если заморожен)
-    public getColor(): string {
-        if (this.statuses.some(s => s.type === 'slow')) return '#00bcd4'; // Лед
-        return this.getHealthPercent() > 0.5 ? '#2ecc71' : '#e74c3c'; // Зеленый/Красный
-    }
+    public isAlive(): boolean { return this.currentHealth > 0; }
+    public getHealthPercent(): number { return this.currentHealth / this.maxHealth; }
 }
