@@ -1,18 +1,21 @@
 import { Game } from './Game';
+import { CONFIG } from './Config';
 
 export class InputSystem {
     private game: Game;
     private canvas: HTMLCanvasElement;
 
-    // Состояние курсора
+    // Курсор
     public mouseX: number = 0;
     public mouseY: number = 0;
-    
-    // Состояние сетки (над какой клеткой мышь)
     public hoverCol: number = -1;
     public hoverRow: number = -1;
 
+    // Логика удержания
     public isMouseDown: boolean = false;
+    private holdStartTime: number = 0;
+    public holdProgress: number = 0; // 0.0 -> 1.0
+    private hasBuilt: boolean = false; // Чтобы не строить 100 башен за одно нажатие
 
     constructor(game: Game) {
         this.game = game;
@@ -21,45 +24,81 @@ export class InputSystem {
     }
 
     private initListeners() {
+        // 1. Движение
         this.canvas.addEventListener('mousemove', (e) => {
             const rect = this.canvas.getBoundingClientRect();
-            // Считаем X/Y строго внутри канваса
             this.mouseX = e.clientX - rect.left;
             this.mouseY = e.clientY - rect.top;
 
-            // Пересчет в координаты сетки (64px - размер клетки)
-            this.hoverCol = Math.floor(this.mouseX / 64);
-            this.hoverRow = Math.floor(this.mouseY / 64);
+            const newCol = Math.floor(this.mouseX / CONFIG.TILE_SIZE);
+            const newRow = Math.floor(this.mouseY / CONFIG.TILE_SIZE);
 
-            // Если мы что-то тащим (карту), обновляем "призрака" по координатам ЭКРАНА
+            // Если сдвинули мышь на другую клетку — сбрасываем прогресс строительства
+            if (newCol !== this.hoverCol || newRow !== this.hoverRow) {
+                this.resetHold();
+            }
+
+            this.hoverCol = newCol;
+            this.hoverRow = newRow;
+
+            // Обновляем позицию перетаскиваемой карты
             if (this.game.cardSys.dragCard) {
                 this.game.cardSys.updateDrag(e.clientX, e.clientY);
             }
         });
 
+        // 2. Нажатие (Начало стройки)
         this.canvas.addEventListener('mousedown', (e) => {
-            if (e.button === 0) {
+            if (e.button === 0) { // ЛКМ
                 this.isMouseDown = true;
-                this.game.handleGridClick(this.hoverCol, this.hoverRow);
+                this.holdStartTime = Date.now();
+                this.hasBuilt = false;
             }
         });
 
-        window.addEventListener('mouseup', () => {
-            if (this.isMouseDown) {
-                this.isMouseDown = false;
-            }
-            // Также вызываем endDrag глобально, если отпустили кнопку
-            if (this.game.cardSys.dragCard) {
-                // передаем событие мыши (хотя бы примерное), 
-                // но лучше полагаться на mouseup event Listener внутри CardSystem
-            }
-        });
-        
-        // Отдельно вешаем на window, чтобы ловить отпускание карты где угодно
-        window.onmouseup = (e) => {
+        // 3. Отпускание (Конец стройки или сброс карты)
+        window.addEventListener('mouseup', (e) => {
+            this.isMouseDown = false;
+            this.resetHold();
+
             if (this.game.cardSys.dragCard) {
                 this.game.cardSys.endDrag(e);
             }
-        };
+        });
+    }
+
+    private resetHold() {
+        this.holdProgress = 0;
+        this.hasBuilt = false;
+        this.holdStartTime = Date.now();
+    }
+
+    // Вызывается каждый кадр из Game.update()
+    public update() {
+        // Если тащим карту — не строим башни
+        if (this.game.cardSys.dragCard) {
+            this.resetHold();
+            return;
+        }
+
+        if (this.isMouseDown && !this.hasBuilt) {
+            // Проверяем валидность клетки через Game
+            if (this.game.canBuildAt(this.hoverCol, this.hoverRow)) {
+                const elapsed = Date.now() - this.holdStartTime;
+                this.holdProgress = Math.min(1, elapsed / CONFIG.CONTROLS.BUILD_HOLD_MS);
+
+                // Таймер истек — строим!
+                if (this.holdProgress >= 1) {
+                    this.game.buildBaseTower(this.hoverCol, this.hoverRow);
+                    this.hasBuilt = true;
+                    this.holdProgress = 0;
+                }
+            } else {
+                // Если клетка занята или нельзя строить — сброс
+                this.resetHold();
+            }
+        } else {
+            this.holdProgress = 0;
+        }
     }
 }
