@@ -3,56 +3,91 @@ import { CONFIG } from './Config';
 
 export class ShopSystem {
     private game: Game;
-    private elShopBtn: HTMLButtonElement;
-    public readonly cost: number = 100; // Цена покупки карты
+    public readonly cost: number = CONFIG.ECONOMY.SHOP_COST;
+    
+    // Текущие карты в магазине (конфиги карт)
+    public shopCards: (any | null)[] = [null, null, null];
+    // Индекс выбранной карты
+    public selectedSlotIndex: number = -1;
 
     constructor(game: Game) {
         this.game = game;
-        this.elShopBtn = document.getElementById('shop-btn') as HTMLButtonElement;
-        this.initListeners();
+        this.rerollShop(); // Заполняем магазин при старте
     }
 
-    private initListeners() {
-        this.elShopBtn.addEventListener('click', () => this.buyCard());
+    // Заполнить пустые слоты новыми случайными картами
+    public rerollShop() {
+        const cardKeys = Object.keys(CONFIG.CARD_TYPES);
+        for (let i = 0; i < this.shopCards.length; i++) {
+            if (this.shopCards[i] === null) {
+                const randomKey = cardKeys[Math.floor(Math.random() * cardKeys.length)];
+                this.shopCards[i] = CONFIG.CARD_TYPES[randomKey];
+            }
+        }
     }
 
-    // Основная логика покупки карты
+    // Выбор карты в UI
+    public selectCard(index: number) {
+        if (this.shopCards[index] !== null) {
+            this.selectedSlotIndex = index;
+            this.game.ui.update(); // Обновляем UI для подсветки
+        }
+    }
+
     public buyCard(): boolean {
+        // 0. Проверка выбора
+        if (this.selectedSlotIndex === -1 || this.shopCards[this.selectedSlotIndex] === null) {
+             return false;
+        }
+
         // 1. Проверка денег
         if (this.game.money < this.cost) {
-            // Теперь вызывается как public:
             this.game.showFloatingText("Не хватает золота!", 800, 800, 'red'); 
             return false;
         }
         
         // 2. Проверка лимита руки
         if (this.game.cardSys.hand.length >= CONFIG.PLAYER.HAND_LIMIT) {
-             // Теперь вызывается как public:
              this.game.showFloatingText("Рука переполнена!", 800, 800, 'orange');
              return false;
         }
 
-        // 3. Вычитаем деньги и выдаем карту
+        // 3. Покупка
         this.game.money -= this.cost;
-        this.game.giveRandomCard(); 
         
+        // Получаем ключ типа карты по её конфигу
+        const cardTypeConfig = this.shopCards[this.selectedSlotIndex];
+        let typeKey = 'FIRE'; // фоллбэк
+        for(const key in CONFIG.CARD_TYPES) {
+            if(CONFIG.CARD_TYPES[key].id === cardTypeConfig.id) {
+                typeKey = key;
+                break;
+            }
+        }
+        
+        this.game.cardSys.addCard(typeKey, 1);
+        
+        // Эффекты
         this.game.effects.add({
             type: 'text', text: `- ${this.cost}💰`, 
-            x: this.game.canvas.width - 100, y: this.game.canvas.height - 50,
+            x: this.game.canvas.width - 200, y: this.game.canvas.height - 100,
             life: 60, color: 'gold', vy: -1
         });
+
+        // Удаляем купленную карту из магазина и сбрасываем выбор
+        this.shopCards[this.selectedSlotIndex] = null;
+        this.selectedSlotIndex = -1;
+        
+        // Заполняем пустой слот новой картой
+        this.rerollShop();
         
         this.game.ui.update();
         return true;
     }
 
-    // Обновляем состояние кнопки магазина
-    public updateBtnState() {
-        const canBuy = 
-            this.game.money >= this.cost && 
-            this.game.cardSys.hand.length < CONFIG.PLAYER.HAND_LIMIT;
-
-        this.elShopBtn.disabled = !canBuy;
-        this.elShopBtn.innerHTML = `<span>🛒</span> ${this.cost}💰`;
+    public canBuy(): boolean {
+        return this.game.money >= this.cost && 
+               this.game.cardSys.hand.length < CONFIG.PLAYER.HAND_LIMIT &&
+               this.selectedSlotIndex !== -1; // Обязательно должна быть выбрана карта
     }
 }

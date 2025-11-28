@@ -9,51 +9,33 @@ export const CONFIG = {
     
     // Игрок
     PLAYER: {
-        START_MONEY: 150, // Чуть больше денег на старт
+        START_MONEY: 250, // Больше денег на старт для тестов
         START_LIVES: 20, 
         HAND_LIMIT: 7
     },
     
-    // Экономика и Лут (Важно!)
+    // Экономика
     ECONOMY: {
-        WAVE_CLEAR_REWARD: 2, // Сколько карт даем за прохождение волны
-        DROP_CHANCE: 0.15,    // 15% шанс выпадения карты с врага
-        EARLY_WAVE_BONUS: 30, // Золото за вызов волны досрочно
-        TOWER_COST: 55,
-        FORGE_COST: 50
+        WAVE_CLEAR_REWARD: 2, 
+        DROP_CHANCE: 0.15,    
+        EARLY_WAVE_BONUS: 30, 
+        TOWER_COST: 30,       // Цена пустой башни
+        FORGE_COST: 50,
+        SHOP_COST: 100        // Цена карты в магазине
     },
     
-    // --- БАЛАНС КАРТ И БАШЕН ---
+    // --- БАЛАНС БАШЕН ---
     TOWER: {
-        BASE_RANGE: 120, BASE_DMG: 5, BASE_CD: 45
+        BASE_RANGE: 120, BASE_DMG: 5, BASE_CD: 45,
+        BUILD_TIME: 60 // Время постройки в кадрах (например, 1 секунда при 60fps)
     },
 
+    // --- БАЛАНС КАРТ ---
     CARDS: {
-        // 🔥 ОГОНЬ (Мортира: Медленная, мощная, сплэш)
-        FIRE: {
-            DAMAGE_PER_LVL: 15,
-            CD_INCREASE: 10,    // Замедляет стрельбу (чем больше число, тем медленнее)
-            SPLASH_RADIUS_BASE: 50,
-            SPLASH_PER_LVL: 20
-        },
-        // ❄️ ЛЕД (Контроль: Слабый урон, сильное замедление)
-        ICE: {
-            DAMAGE_PER_LVL: 3,
-            SLOW_POWER: 0.6,    // 60% замедления (было 0.4)
-            SLOW_DUR_BASE: 40,  // Кадров
-            SLOW_DUR_PER_LVL: 30
-        },
-        // 🎯 СНАЙПЕР (ДД: Далеко, больно, пробивает)
-        SNIPER: {
-            DAMAGE_PER_LVL: 12,
-            RANGE_PER_LVL: 80,  // Очень сильно растет радиус
-            SPEED_SET: 18,      // Скорость полета пули
-            PIERCE_LVL_REQ: 3   // С какого уровня пробивает насквозь
-        },
-        // 💥 ЗАЛП (Мультишот)
-        MULTI: {
-            DMG_PENALTY: 0.6    // Штраф к урону (60% от базы)
-        }
+        FIRE: { DAMAGE_PER_LVL: 15, CD_INCREASE: 10, SPLASH_RADIUS_BASE: 50, SPLASH_PER_LVL: 20 },
+        ICE: { DAMAGE_PER_LVL: 3, SLOW_POWER: 0.6, SLOW_DUR_BASE: 40, SLOW_DUR_PER_LVL: 30 },
+        SNIPER: { DAMAGE_PER_LVL: 12, RANGE_PER_LVL: 80, SPEED_SET: 18, PIERCE_LVL_REQ: 3 },
+        MULTI: { DMG_PENALTY: 0.6 }
     },
 
     // Описание типов карт
@@ -65,24 +47,19 @@ export const CONFIG = {
     } as Record<string, any>,
 
     // Враги
-    ENEMY: {
-        BASE_HP: 25, HP_GROWTH: 1.2, // Враги растут на 20% каждую волну
-    },
+    ENEMY: { BASE_HP: 25, HP_GROWTH: 1.2 },
 
     ENEMY_TYPES: {
         GRUNT: { id: 'grunt', symbol: '👾', hpMod: 1.0, speed: 1.5, reward: 5, color: '#9c27b0' },
         SCOUT: { id: 'scout', symbol: '🦇', hpMod: 0.5, speed: 3.5, reward: 3, color: '#ffeb3b' },
         TANK:  { id: 'tank',  symbol: '🐗', hpMod: 3.0, speed: 1.0, reward: 12, color: '#795548' },
-        BOSS:  { 
-            id: 'boss', symbol: '👹', hpMod: 20.0, speed: 0.5, reward: 200, color: '#ff0000',
-            ability: 'summon', summonType: 'SCOUT', summonCd: 180 
-        }
+        BOSS:  { id: 'boss', symbol: '👹', hpMod: 20.0, speed: 0.5, reward: 200, color: '#ff0000', ability: 'summon', summonType: 'SCOUT', summonCd: 180 }
     } as Record<string, any>,
     
     // Волны
     WAVES: [
         [ { type: 'GRUNT', count: 10, interval: 90 } ],
-        [ { type: 'SCOUT', count: 10, interval: 40 } ], // Быстрые
+        [ { type: 'SCOUT', count: 10, interval: 40 } ], 
         [ { type: 'GRUNT', count: 15, interval: 30 }, { type: 'TANK', count: 2, interval: 150 } ],
         [ { type: 'TANK', count: 5, interval: 100 }, { type: 'SCOUT', count: 15, interval: 20 } ],
         [ { type: 'GRUNT', count: 30, interval: 20 }, { type: 'BOSS', count: 1, interval: 300 } ]

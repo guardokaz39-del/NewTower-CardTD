@@ -7,7 +7,7 @@
         body { margin: 0; overflow: hidden; background: #222; font-family: 'Segoe UI', sans-serif; user-select: none; }
         
         #game-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
-        canvas { box-shadow: 0 0 30px rgba(0,0,0,0.5); border-radius: 4px; }
+        canvas { box-shadow: 0 0 30px rgba(0,0,0,0.5); border-radius: 4px; cursor: crosshair; }
         
         /* UI Слой */
         #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -19,12 +19,9 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.3); pointer-events: auto;
         }
 
-        /* --- НОВЫЙ НИЖНИЙ ЛЕЙАУТ --- */
-        
-        /* Кнопка Старта (НОВОЕ МЕСТО) */
         #start-wave-btn {
-            position: absolute; top: 20px; left: 20px; /* Слева сверху */
-            width: 50px; height: 50px; border-radius: 50%; /* Сделаем симметричным */
+            position: absolute; top: 20px; left: 20px;
+            width: 50px; height: 50px; border-radius: 50%;
             background: #d32f2f; border: 4px solid #b71c1c; color: white; font-size: 24px;
             cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.4);
             pointer-events: auto; transition: transform 0.1s;
@@ -37,17 +34,21 @@
             position: absolute; bottom: 20px; left: 20px;
             pointer-events: auto;
         }
+        /* Центровка слотов кузницы */
+        #forge-container .slots-container {
+            justify-content: center;
+        }
 
         /* Рука (Центр) */
         #hand-container {
             position: absolute; bottom: 20px; left: 50%; 
             transform: translateX(-50%);
-            width: 50vw; /* 50% ширины экрана */
+            width: 50vw;
             pointer-events: auto;
         }
         #hand {
             display: flex; gap: 10px; padding: 15px; background: rgba(0,0,0,0.6);
-            border-radius: 15px; justify-content: center; 
+            border-radius: 15px; justify-content: center; min-height: 100px;
         }
 
         /* Магазин (Справа) */
@@ -59,7 +60,7 @@
         /* Общие стили для панелей */
         .ui-panel {
             padding: 15px; border-radius: 15px; background: rgba(40, 40, 50, 0.9);
-            border: 2px solid #444; width: 250px; /* Фиксированная ширина */
+            border: 2px solid #444; width: 250px;
         }
         .panel-title { 
             color: #ddd; font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #555; 
@@ -67,12 +68,16 @@
         }
         
         /* Стили слотов */
-        .slots-container { display: flex; gap: 10px; margin-bottom: 10px; }
+        .slots-container { display: flex; gap: 10px; margin-bottom: 10px; justify-content: space-between; }
         .slot {
             width: 70px; height: 100px; border: 2px dashed #666; border-radius: 8px;
             display: flex; align-items: center; justify-content: center; color: #555; font-size: 24px;
+            position: relative;
         }
-        .slot.shop-slot { border-color: gold; } /* Золотая рамка для магазина */
+        .slot.shop-slot { border-color: gold; cursor: pointer; transition: 0.2s; }
+        /* Стиль для выбранного слота в магазине */
+        .slot.shop-slot.selected { border: 3px solid #fff; box-shadow: 0 0 10px gold; }
+        .slot.shop-slot:hover { background: rgba(255, 215, 0, 0.1); }
 
         /* Кнопки */
         button {
@@ -93,9 +98,11 @@
         .card.type-fire { background: linear-gradient(135deg, #ffcdd2, #e57373); border-color: #b71c1c; }
         .card.type-ice { background: linear-gradient(135deg, #b3e5fc, #4fc3f7); border-color: #0288d1; }
         .card.type-sniper { background: linear-gradient(135deg, #c8e6c9, #81c784); border-color: #388e3c; }
+        .card.type-multi { background: linear-gradient(135deg, #ffe0b2, #ffb74d); border-color: #e65100; }
         
         .card-level { position: absolute; top: 5px; right: 5px; font-weight: bold; color: #333; }
         .card-icon { font-size: 32px; }
+        .card-cost { position: absolute; bottom: 5px; font-size: 14px; font-weight: bold; color: #333; }
         
         #drag-ghost {
             position: fixed; pointer-events: none; z-index: 9999; display: none;
@@ -103,6 +110,17 @@
         }
         .shaking { animation: shake 0.5s; }
         @keyframes shake { 0% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } 100% { transform: translateX(0); } }
+
+        /* Game Over - по умолчанию скрыт */
+        #game-over {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85); color: white; display: none; /* ИСПРАВЛЕНО */
+            flex-direction: column; justify-content: center; align-items: center;
+            pointer-events: auto; z-index: 100;
+        }
+        #game-over h1 { font-size: 64px; color: #d32f2f; margin-bottom: 20px; }
+        #game-over p { font-size: 24px; margin-bottom: 40px; }
+        #restart-btn { padding: 15px 40px; font-size: 24px; background: #d32f2f; }
     </style>
 </head>
 <body>
@@ -121,8 +139,8 @@
             <div id="forge-container" class="ui-panel">
                 <div class="panel-title">⚒️ КУЗНИЦА (Forge)</div>
                 <div class="slots-container">
-                    <div class="slot" id="forge-slot-0">1</div>
-                    <div class="slot" id="forge-slot-1">2</div>
+                    <div class="slot" id="forge-slot-0"></div>
+                    <div class="slot" id="forge-slot-1"></div>
                 </div>
                 <button id="forge-btn" disabled><span>⚒️</span> 50💰</button>
             </div>
@@ -134,18 +152,16 @@
             <div id="shop-container" class="ui-panel">
                 <div class="panel-title">🛒 МАГАЗИН (Shop)</div>
                 <div class="slots-container" id="shop-slots">
-                    <div class="slot shop-slot">?</div>
-                    <div class="slot shop-slot">?</div>
-                    <div class="slot shop-slot">?</div>
+                    <div class="slot shop-slot" data-idx="0"></div>
+                    <div class="slot shop-slot" data-idx="1"></div>
+                    <div class="slot shop-slot" data-idx="2"></div>
                 </div>
                 <button id="shop-btn" disabled><span>🛒</span> 100💰</button>
             </div>
 
-
             <div id="game-over">
                 <h1>GAME OVER</h1>
                 <p>Wave reached: <span id="final-wave">0</span></p>
-                <br>
                 <button id="restart-btn">Try Again</button>
             </div>
         </div>
