@@ -1,21 +1,23 @@
 import { Game } from './Game';
-import { CONFIG } from './Config';
+import { screenToTile } from './Utils';
 
 export class InputSystem {
     private game: Game;
     private canvas: HTMLCanvasElement;
 
-    // Курсор
+    // Состояние курсора
     public mouseX: number = 0;
     public mouseY: number = 0;
+    
+    // Состояние сетки (над какой клеткой мышь)
     public hoverCol: number = -1;
     public hoverRow: number = -1;
 
-    // Логика удержания
+    // Состояние нажатия
     public isMouseDown: boolean = false;
-    private holdStartTime: number = 0;
-    public holdProgress: number = 0; // от 0.0 до 1.0
-    private hasBuilt: boolean = false; // Флаг, чтобы не строить 2 башни за 1 клик
+    
+    // Прогресс удержания кнопки (для постройки)
+    public holdProgress: number = 0; 
 
     constructor(game: Game) {
         this.game = game;
@@ -24,87 +26,56 @@ export class InputSystem {
     }
 
     private initListeners() {
-        // 1. Движение
+        // --- ДВИЖЕНИЕ МЫШИ ---
         this.canvas.addEventListener('mousemove', (e) => {
-            this.updateMousePos(e);
-
-            // Если сдвинули мышь на другую клетку — сбрасываем прогресс
-            // (Нужно пересчитать hoverCol перед сравнением, это делается в updateMousePos)
-        });
-
-        // 2. Нажатие
-        this.canvas.addEventListener('mousedown', (e) => {
-            if (e.button === 0) { // ЛКМ
-                this.isMouseDown = true;
-                this.holdStartTime = Date.now();
-                this.hasBuilt = false;
-            }
-        });
-
-        // 3. Отпускание
-        window.addEventListener('mouseup', (e) => {
-            this.isMouseDown = false;
-            this.resetHold();
+            // 1. Конвертируем пиксели экрана в координаты сетки
+            const tile = screenToTile(e.clientX, e.clientY, this.canvas);
             
-            // Если тащили карту
+            this.hoverCol = tile.col;
+            this.hoverRow = tile.row;
+            this.mouseX = e.clientX;
+            this.mouseY = e.clientY;
+
+            // 2. Если тащим карту, обновляем её позицию
             if (this.game.cardSys.dragCard) {
-                this.game.cardSys.endDrag(e);
+                this.game.cardSys.updateDrag(e.clientX, e.clientY);
             }
+        });
+
+        // --- НАЖАТИЕ (КЛИК) ---
+        this.canvas.addEventListener('mousedown', async (e) => {
+            if (e.button === 0) { // Левая кнопка мыши
+                this.isMouseDown = true;
+                
+                // ВАЖНО: Разблокируем звук при первом клике
+                if (this.game.audio) {
+                     // @ts-ignore: Игнорируем ошибку старых типов, если они еще не обновились
+                     await this.game.audio.init(); 
+                }
+
+                // Обрабатываем клик по сетке (например, для Обелиска)
+                this.game.handleGridClick(this.hoverCol, this.hoverRow);
+            }
+        });
+
+        // --- ОТПУСКАНИЕ ---
+        window.addEventListener('mouseup', () => {
+            this.isMouseDown = false;
+            // Если тащили карту — отпускаем её
+            this.game.cardSys.endDrag();
         });
     }
 
-    // Централизованный метод расчета координат (screenToTile)
-    private updateMousePos(e: MouseEvent) {
-        const rect = this.canvas.getBoundingClientRect();
-        this.mouseX = e.clientX - rect.left;
-        this.mouseY = e.clientY - rect.top;
-
-        const newCol = Math.floor(this.mouseX / CONFIG.TILE_SIZE);
-        const newRow = Math.floor(this.mouseY / CONFIG.TILE_SIZE);
-
-        // Если перешли на новую клетку, сбрасываем таймер стройки
-        if (newCol !== this.hoverCol || newRow !== this.hoverRow) {
-            this.resetHold();
-        }
-
-        this.hoverCol = newCol;
-        this.hoverRow = newRow;
-
-        // Обновляем визуальный drag карты
-        if (this.game.cardSys.dragCard) {
-            this.game.cardSys.updateDrag(e.clientX, e.clientY);
-        }
-    }
-
-    private resetHold() {
-        this.holdProgress = 0;
-        this.hasBuilt = false;
-        this.holdStartTime = Date.now();
-    }
-
-    // Вызывается в Game loop
     public update() {
-        // Если тащим карту - строить нельзя
-        if (this.game.cardSys.dragCard) {
-            this.resetHold();
-            return;
-        }
-
-        if (this.isMouseDown && !this.hasBuilt) {
-            // Проверяем валидность места через Game
-            if (this.game.canBuildAt(this.hoverCol, this.hoverRow)) {
-                
-                const elapsed = Date.now() - this.holdStartTime;
-                this.holdProgress = Math.min(1, elapsed / CONFIG.CONTROLS.BUILD_HOLD_MS);
-
-                // Таймер истек — строим!
-                if (this.holdProgress >= 1) {
-                    this.game.buildBaseTower(this.hoverCol, this.hoverRow);
-                    this.hasBuilt = true;
-                    this.holdProgress = 0;
-                }
-            } else {
-                this.resetHold();
+        // Логика удержания кнопки мыши (для строительства башни)
+        if (this.isMouseDown && !this.game.cardSys.dragCard) {
+            this.holdProgress += 0.05; // Скорость заполнения круга
+            
+            if (this.holdProgress >= 1) {
+                // Круг заполнился — строим башню
+                this.game.buildBaseTower(this.hoverCol, this.hoverRow);
+                this.holdProgress = 0; 
+                this.isMouseDown = false; // Сбрасываем нажатие
             }
         } else {
             this.holdProgress = 0;

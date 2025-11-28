@@ -9,6 +9,7 @@ import { EffectSystem } from './EffectSystem';
 import { Tower } from './Tower';
 import { Projectile } from './Projectile';
 import { ObjectPool } from './Utils';
+import { AudioSystem } from './AudioSystem';
 
 export class Game {
     public canvas: HTMLCanvasElement;
@@ -24,6 +25,7 @@ export class Game {
     public events: EventEmitter;
     public input: InputSystem;
     public effects: EffectSystem;
+    public audio: AudioSystem;
 
     public money: number;
     public lives: number;
@@ -48,6 +50,8 @@ export class Game {
         this.events = new EventEmitter();
         this.projectilePool = new ObjectPool<Projectile>(() => new Projectile());
         
+        // Инициализация систем
+        this.audio = new AudioSystem(); 
         this.map = new MapManager(this.canvas.width, this.canvas.height);
         this.effects = new EffectSystem(this.ctx);
         this.cardSys = new CardSystem(this);
@@ -92,18 +96,60 @@ export class Game {
         this.start(); 
     }
 
-    // Обработка клика по карте
+    // --- ЛОГИКА СЕТКИ И КЛИКОВ ---
     public handleGridClick(col: number, row: number) {
-        // 1. Активация Обелиска
+        // Обелиск
         if (this.map.grid[row][col].type === 3) {
             this.activateObelisk();
             return;
         }
-
-        // 2. Постройка (если можно)
+        // Постройка (быстрый клик)
         if (this.canBuildAt(col, row)) {
-            this.buildBaseTower(col, row);
+             // Логику постройки обрабатывает InputSystem через удержание, 
+             // но если нужен мгновенный клик, можно раскомментировать:
+             // this.buildBaseTower(col, row);
         }
+    }
+
+    public canBuildAt(col: number, row: number): boolean {
+        if (col < 0 || col >= this.map.cols || row < 0 || row >= this.map.rows) return false;
+        if (this.map.grid[row][col].type !== 0) return false;
+        if (this.towers.some(t => t.col === col && t.row === row)) return false;
+        return true;
+    }
+
+    public buildBaseTower(col: number, row: number) {
+        if (!this.canBuildAt(col, row)) return;
+
+        const cost = CONFIG.ECONOMY.TOWER_COST;
+        if (this.money < cost) {
+            this.showFloatingText("Нет золота!", col, row, 'red');
+            return;
+        }
+        this.money -= cost;
+        const newTower = new Tower(col, row);
+        this.towers.push(newTower);
+        
+        this.audio.playBuild(); 
+        this.effects.spawnParticles(newTower.x, newTower.y, '#8d6e63', 15);
+        this.effects.add({type: 'scan', x: newTower.x, y: newTower.y, life: 20, radius: 40, color: 'white'});
+        this.showFloatingText(`-${cost}💰`, col, row, 'gold');
+        this.ui.update();
+    }
+
+    public handleCardDrop(card: ICard, col: number, row: number): boolean {
+        const existingTower = this.towers.find(t => t.col === col && t.row === row);
+        if (!existingTower) return false; 
+        if (existingTower.cards.length >= 3) {
+            this.showFloatingText("Полно!", col, row, 'orange');
+            return false;
+        }
+        existingTower.addCard(card);
+        this.audio.playBuild();
+        this.effects.spawnParticles(existingTower.x, existingTower.y, card.type.color, 20);
+        this.showFloatingText("UPGRADE!", col, row, card.type.color);
+        this.ui.update();
+        return true;
     }
 
     public activateObelisk() {
@@ -115,6 +161,7 @@ export class Game {
             obelisk.active = true;
             Enemy.globalSlow = CONFIG.OBELISK.SLOW_POWER;
             
+            this.audio.playWaveStart();
             this.showFloatingText("TIME SLOW!", obelisk.x * 64, obelisk.y * 64, '#00ffff');
             
             setTimeout(() => {
@@ -129,43 +176,6 @@ export class Game {
         }
     }
 
-    public canBuildAt(col: number, row: number): boolean {
-        if (col < 0 || col >= this.map.cols || row < 0 || row >= this.map.rows) return false;
-        if (this.map.grid[row][col].type !== 0) return false;
-        if (this.towers.some(t => t.col === col && t.row === row)) return false;
-        return true;
-    }
-
-    public buildBaseTower(col: number, row: number) {
-        const cost = CONFIG.ECONOMY.TOWER_COST;
-        if (this.money < cost) {
-            this.showFloatingText("No Gold!", col, row, 'red');
-            return;
-        }
-        this.money -= cost;
-        const newTower = new Tower(col, row);
-        this.towers.push(newTower);
-        
-        this.effects.spawnParticles(newTower.x, newTower.y, '#8d6e63', 15);
-        this.effects.add({type: 'scan', x: newTower.x, y: newTower.y, life: 20, radius: 40, color: 'white'});
-        this.showFloatingText(`-${cost}💰`, col, row, 'gold');
-        this.ui.update();
-    }
-
-    public handleCardDrop(card: ICard, col: number, row: number): boolean {
-        const existingTower = this.towers.find(t => t.col === col && t.row === row);
-        if (!existingTower) return false; 
-        if (existingTower.cards.length >= 3) {
-            this.showFloatingText("Full!", col, row, 'orange');
-            return false;
-        }
-        existingTower.addCard(card);
-        this.effects.spawnParticles(existingTower.x, existingTower.y, card.type.color, 20);
-        this.showFloatingText("UPGRADE!", col, row, card.type.color);
-        this.ui.update();
-        return true;
-    }
-
     public showFloatingText(text: string, colOrX: number, rowOrY: number, color: string) {
         let x = colOrX;
         let y = rowOrY;
@@ -176,13 +186,106 @@ export class Game {
         this.effects.add({ type: 'text', text: text, x: x, y: y, life: 60, color: color, vy: -1 });
     }
 
-    public sellCard() {
-        const sellPrice = CONFIG.ECONOMY.SELL_PRICE;
-        this.money += sellPrice;
-        this.showFloatingText(`+${sellPrice}💰`, this.canvas.width - 100, this.canvas.height - 150, 'yellow');
+    public giveRandomCard() {
+        const keys = Object.keys(CONFIG.CARD_TYPES);
+        const randomKey = keys[Math.floor(Math.random() * keys.length)];
+        this.cardSys.addCard(randomKey, 1);
+    }
+    
+    // --- УПРАВЛЕНИЕ ВОЛНАМИ (Методы, которых не хватало) ---
+    
+    public startWave() {
+        if (this.isWaveActive && this.enemies.length > 0) {
+            this.money += CONFIG.ECONOMY.EARLY_WAVE_BONUS;
+            this.showFloatingText(`BONUS! +${CONFIG.ECONOMY.EARLY_WAVE_BONUS}💰`, this.canvas.width/2, this.canvas.height/2 + 50, '#ffd700');
+        }
+        this.wave++;
+        
+        // Победа
+        if (this.wave > CONFIG.WAVES.length) {
+            this.isRunning = false;
+            this.ui.showGameOver(this.wave, true);
+            return;
+        }
+
+        this.isWaveActive = true;
+        this.audio.playWaveStart(); // Звук сирены
         this.ui.update();
+        
+        let waveIdx = (this.wave - 1) % CONFIG.WAVES.length;
+        const waveData = CONFIG.WAVES[waveIdx];
+        let subWaveIdx = 0;
+        
+        const runSubWave = () => {
+            if (subWaveIdx >= waveData.length) return;
+            const group = waveData[subWaveIdx];
+            let spawned = 0;
+            this.spawnInterval = setInterval(() => {
+                this.spawnEnemy(group.type);
+                spawned++;
+                if (spawned >= group.count) {
+                    clearInterval(this.spawnInterval);
+                    subWaveIdx++;
+                    runSubWave();
+                }
+            }, group.interval * 10);
+        };
+        runSubWave();
     }
 
+    public checkWaveEnd() {
+        if (this.isWaveActive && this.enemies.length === 0) {
+            this.isWaveActive = false;
+            
+            if (this.wave >= CONFIG.WAVES.length) {
+                this.isRunning = false;
+                this.ui.showGameOver(this.wave, true);
+                return;
+            }
+
+            const reward = CONFIG.ECONOMY.WAVE_CLEAR_REWARD;
+            this.money += reward;
+            this.giveRandomCard();
+            
+            this.effects.add({
+                type: 'text', 
+                text: `WAVE CLEARED! +${reward}💰`, 
+                x: this.canvas.width/2, y: this.canvas.height/2, 
+                life: 120, color: '#00ff00', vy: -0.5
+            });
+            
+            this.ui.update();
+        }
+    }
+    
+    public spawnEnemy(typeKey: string, startOpts?: any) {
+         if (this.map.path.length === 0) return;
+         
+         const typeConf = (CONFIG.ENEMY_TYPES as any)[typeKey];
+         const hp = CONFIG.ENEMY.BASE_HP * typeConf.hpMod * Math.pow(CONFIG.ENEMY.HP_GROWTH, this.wave);
+         
+         let startX, startY;
+         if (startOpts) { startX = startOpts.x; startY = startOpts.y; }
+         else {
+             const startPath = this.map.path[0];
+             startX = startPath.x * CONFIG.TILE_SIZE + 32;
+             startY = startPath.y * CONFIG.TILE_SIZE + 32;
+         }
+         
+         const enemy = new Enemy({
+            id: `e_${Date.now()}_${Math.random()}`,
+            health: hp, 
+            speed: typeConf.speed, 
+            path: this.map.path, 
+            type: typeConf, 
+            x: startX, 
+            y: startY
+         });
+         (enemy as any).reward = typeConf.reward;
+         this.enemies.push(enemy);
+    }
+
+    // --- LOOP ---
     private loop() {
         if (!this.isRunning) return;
         this.update();
@@ -195,8 +298,9 @@ export class Game {
         this.effects.update();
         if (this.map.obelisk.cooldown > 0) this.map.obelisk.cooldown--;
         
-        this.towers.forEach(t => t.update(this.enemies, this.projectiles, this.projectilePool));
-        this.projectiles.forEach(p => p.update(this.enemies, this.effects));
+        // Исправлено: передаем audio в методы обновления
+        this.towers.forEach(t => t.update(this.enemies, this.projectiles, this.projectilePool, this.audio));
+        this.projectiles.forEach(p => p.update(this.enemies, this.effects, this.audio));
         
         for (let i = this.projectiles.length - 1; i >= 0; i--) {
             if (!this.projectiles[i].alive) {
@@ -205,6 +309,7 @@ export class Game {
             }
         }
 
+        // Враги
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const e = this.enemies[i];
             e.move(this);
@@ -212,27 +317,21 @@ export class Game {
             if (!e.isAlive()) {
                 const reward = (e as any).reward || 5;
                 this.money += reward; 
+                this.audio.playGold();
                 this.showFloatingText(`+${reward}💰`, e.x, e.y, 'gold');
 
                 if (Math.random() < CONFIG.ECONOMY.DROP_CHANCE) {
                     this.giveRandomCard();
                     this.effects.add({type: 'text', text: "CARD!", x: e.x, y: e.y, life: 50, color: '#00ffff', vy: -2});
                 }
-
-                // Эффекты смерти (Fire Lvl 3, Ice Lvl 3)
+                
+                // Death Effects (Tier 3)
                 e.deathEffects.forEach(eff => {
                     if (eff.type === 'explode') {
-                        this.effects.add({ type: 'explosion', x: e.x, y: e.y, radius: 60, life: 10, color: 'orange' });
-                        this.enemies.forEach(n => {
+                         this.effects.add({ type: 'explosion', x: e.x, y: e.y, radius: 60, life: 10, color: 'orange' });
+                         this.enemies.forEach(n => {
                             if (n !== e && n.isAlive() && Math.hypot(n.x - e.x, n.y - e.y) < 60) {
                                 n.takeDamage(eff.dmg);
-                            }
-                        });
-                    } else if (eff.type === 'freeze') {
-                        this.effects.add({ type: 'scan', x: e.x, y: e.y, radius: 50, life: 15, color: 'cyan' });
-                        this.enemies.forEach(n => {
-                            if (n !== e && n.isAlive() && Math.hypot(n.x - e.x, n.y - e.y) < 50) {
-                                n.applyStatus('slow', 60, 0.5);
                             }
                         });
                     }
@@ -245,6 +344,7 @@ export class Game {
             } 
             else if (e.finished) {
                 this.lives--;
+                this.audio.playHit(); 
                 this.effects.add({type: 'text', text: "-1❤️", x: e.x, y: e.y, life: 40, color: 'red', vy: -1});
                 document.body.style.transform = `translate(${Math.random()*6-3}px, ${Math.random()*6-3}px)`;
                 setTimeout(() => document.body.style.transform = 'none', 50);
@@ -293,10 +393,8 @@ export class Game {
         this.enemies.forEach(e => {
             this.ctx.fillStyle = e.type.color; 
             if (e.statuses.some(s => s.type === 'slow')) this.ctx.fillStyle = '#00ffff'; 
-            
             this.ctx.beginPath(); this.ctx.arc(e.x, e.y, 16, 0, Math.PI*2); this.ctx.fill();
             this.ctx.strokeStyle = '#000'; this.ctx.lineWidth = 1; this.ctx.stroke();
-
             const barW = 32; const barH = 5; const barX = e.x - barW / 2; const barY = e.y - 28;
             this.ctx.fillStyle = '#000'; this.ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
             const pct = Math.max(0, e.currentHealth / e.maxHealth);
@@ -311,7 +409,7 @@ export class Game {
             this.drawTowerInfo(hoveredTower);
         }
     }
-
+    
     private drawTowerInfo(t: Tower) {
         const stats = t.getStats();
         this.ctx.fillStyle = CONFIG.COLORS.RANGE_CIRCLE;
@@ -333,103 +431,5 @@ export class Game {
         lines.forEach((l, i) => {
             this.ctx.fillText(l, tipX, tipY - 30 + (i * 14));
         });
-    }
-
-    public startWave() {
-        if (this.isWaveActive && this.enemies.length > 0) {
-            this.money += CONFIG.ECONOMY.EARLY_WAVE_BONUS;
-            this.showFloatingText(`BONUS! +${CONFIG.ECONOMY.EARLY_WAVE_BONUS}💰`, this.canvas.width/2, this.canvas.height/2 + 50, '#ffd700');
-        }
-        this.wave++;
-        
-        if (this.wave > CONFIG.WAVES.length) {
-            this.isRunning = false;
-            this.ui.showGameOver(this.wave, true);
-            return;
-        }
-
-        this.isWaveActive = true;
-        this.ui.update();
-        
-        let waveIdx = (this.wave - 1) % CONFIG.WAVES.length;
-        const waveData = CONFIG.WAVES[waveIdx];
-        let subWaveIdx = 0;
-        
-        const runSubWave = () => {
-            if (subWaveIdx >= waveData.length) return;
-            const group = waveData[subWaveIdx];
-            let spawned = 0;
-            this.spawnInterval = setInterval(() => {
-                this.spawnEnemy(group.type);
-                spawned++;
-                if (spawned >= group.count) {
-                    clearInterval(this.spawnInterval);
-                    subWaveIdx++;
-                    runSubWave();
-                }
-            }, group.interval * 10);
-        };
-        runSubWave();
-    }
-
-    public checkWaveEnd() {
-        if (this.isWaveActive && this.enemies.length === 0) {
-            this.isWaveActive = false;
-            
-            if (this.wave >= CONFIG.WAVES.length) {
-                this.isRunning = false;
-                this.ui.showGameOver(this.wave, true);
-                return;
-            }
-
-            const reward = CONFIG.ECONOMY.WAVE_CLEAR_REWARD;
-            this.money += reward;
-            this.giveRandomCard();
-            
-            this.effects.add({
-                type: 'text', 
-                text: `WAVE CLEARED! +${reward}💰`, 
-                x: this.canvas.width/2, y: this.canvas.height/2, 
-                life: 120, color: '#00ff00', vy: -0.5
-            });
-            
-            this.ui.update();
-        }
-    }
-
-    public giveRandomCard() {
-        const keys = Object.keys(CONFIG.CARD_TYPES);
-        const randomKey = keys[Math.floor(Math.random() * keys.length)];
-        this.cardSys.addCard(randomKey, 1);
-    }
-    
-    public spawnEnemy(typeKey: string, startOpts?: any) {
-        if (this.map.path.length === 0) return;
-        
-        const typeConf = (CONFIG.ENEMY_TYPES as any)[typeKey];
-        const hp = CONFIG.ENEMY.BASE_HP * typeConf.hpMod * Math.pow(CONFIG.ENEMY.HP_GROWTH, this.wave);
-
-        let startX, startY;
-
-        if (startOpts) {
-            startX = startOpts.x;
-            startY = startOpts.y;
-        } else {
-            const startPath = this.map.path[0];
-            startX = startPath.x * CONFIG.TILE_SIZE + 32;
-            startY = startPath.y * CONFIG.TILE_SIZE + 32;
-        }
-
-        const enemy = new Enemy({
-            id: `e_${Date.now()}_${Math.random()}`,
-            health: hp, 
-            speed: typeConf.speed,
-            path: this.map.path,
-            type: typeConf,
-            x: startX,
-            y: startY
-        });
-        (enemy as any).reward = typeConf.reward;
-        this.enemies.push(enemy);
     }
 }
