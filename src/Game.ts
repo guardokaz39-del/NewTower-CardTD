@@ -36,7 +36,7 @@ export class Game {
     
     public waveManager: WaveManager;
     public forge: ForgeSystem;
-    public collision: CollisionSystem; // <-- Новая система
+    public collision: CollisionSystem;
 
     public money: number = CONFIG.PLAYER.START_MONEY;
     public lives: number = CONFIG.PLAYER.START_LIVES;
@@ -59,12 +59,12 @@ export class Game {
         
         this.map = new MapManager(this.canvas.width, this.canvas.height);
         this.effects = new EffectSystem(this.ctx);
-        this.debug = new DebugSystem(this); // Инициализируем раньше, чтобы логировать старт
+        this.debug = new DebugSystem(this);
         
         this.forge = new ForgeSystem(this);
         this.cardSys = new CardSystem(this);
         this.waveManager = new WaveManager(this);
-        this.collision = new CollisionSystem(this.effects, this.debug); // <-- Подключаем физику
+        this.collision = new CollisionSystem(this.effects, this.debug);
         
         this.input = new InputSystem(this);
         this.ui = new UIManager(this); 
@@ -127,7 +127,6 @@ export class Game {
         }
 
         this.money -= cost;
-        // Используем Фабрику
         const newTower = EntityFactory.createTower(col, row);
         newTower.isBuilding = true;
         this.towers.push(newTower);
@@ -190,12 +189,10 @@ export class Game {
         this.effects.add({ type: 'text', text: text, x: x + 32, y: y, life: 60, color: color, vy: -1 });
     }
     
-    // Спавн теперь через Фабрику
     public spawnEnemy(typeKey: string) {
         try {
             const enemy = EntityFactory.createEnemy(typeKey, this.wave, this.map.path);
             this.enemies.push(enemy);
-            // this.debug.log(`Spawned ${typeKey}`); // Раскомментируй для детального лога
         } catch (e) {
             this.debug.log(`Error spawning enemy: ${e}`);
         }
@@ -217,16 +214,13 @@ export class Game {
         this.debug.update();
         this.waveManager.update();
 
-        // Обновляем башни (стрельба)
-        this.towers.forEach(t => t.update(this.enemies, this.projectiles, this.projectilePool));
+        // --- ИСПРАВЛЕНИЕ ЗДЕСЬ: Добавлен this.effects ---
+        this.towers.forEach(t => t.update(this.enemies, this.projectiles, this.projectilePool, this.effects));
+        // -----------------------------------------------
         
-        // Обновляем снаряды (ДВИЖЕНИЕ)
         this.projectiles.forEach(p => p.move());
-        
-        // Обновляем ФИЗИКУ (попадания)
         this.collision.update(this.projectiles, this.enemies);
 
-        // Очистка мертвых снарядов
         for (let i = this.projectiles.length - 1; i >= 0; i--) {
             if (!this.projectiles[i].alive) {
                 this.projectilePool.free(this.projectiles[i]);
@@ -234,7 +228,6 @@ export class Game {
             }
         }
 
-        // Логика врагов (смерть, финиш)
         for (let i = this.enemies.length - 1; i >= 0; i--) {
             const e = this.enemies[i];
             e.move();
@@ -252,7 +245,7 @@ export class Game {
             }
             else if (e.finished) {
                 this.lives--;
-                this.effects.add({type: 'text', text: "-❤️", x: e.x, y: e.y, life: 40, color: 'red', vy: -1});
+                this.effects.add({type: 'text', text: "-1❤️", x: e.x, y: e.y, life: 40, color: 'red', vy: -1});
                 this.enemies.splice(i, 1);
                 this.ui.update();
                 
@@ -270,7 +263,6 @@ export class Game {
     }
 
     private render() {
-        // ... (Рендер без изменений)
         this.ctx.fillStyle = '#222';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         this.map.draw(this.ctx);
